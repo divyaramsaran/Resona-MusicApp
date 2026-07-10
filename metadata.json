@@ -1,0 +1,6 @@
+{
+  "name": "Harmony",
+  "description": "A minimalist and beautiful music streaming player that plays free, legal, and Creative Commons music from Jamendo and Internet Archive.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
