@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePlayerStore } from '../player/playerStore';
-import { fetchJamendoTracks, fetchInternetArchiveTracks } from '../../lib/api';
+import { fetchJamendoTracks, fetchInternetArchiveTracks, searchCuratedTracks, CURATED_REGIONAL_TRACKS, CURATED_FALLBACK_TRACKS } from '../../lib/api';
 import { Track } from '../../types';
 import TrackRow from '../../components/TrackRow';
 import { Search, Music, Sparkles, Loader2, Play } from 'lucide-react';
@@ -27,7 +27,17 @@ export default function SearchTab() {
   const executeSearch = async (queryStr: string, genreStr: string) => {
     setLoading(true);
     try {
-      let results: Track[] = [];
+      let localMatches: Track[] = [];
+      if (queryStr.trim()) {
+        localMatches = searchCuratedTracks(queryStr);
+      } else if (genreStr.trim()) {
+        const targetGenre = genreStr.toLowerCase().trim();
+        localMatches = [...CURATED_REGIONAL_TRACKS, ...CURATED_FALLBACK_TRACKS].filter(
+          t => (t.genre || '').toLowerCase().includes(targetGenre)
+        );
+      }
+
+      let externalResults: Track[] = [];
       const normalizedQuery = queryStr.toLowerCase();
       const normalizedGenre = genreStr.toLowerCase();
       
@@ -36,16 +46,26 @@ export default function SearchTab() {
         normalizedQuery.includes('hindi') || 
         normalizedQuery.includes('tamil') || 
         normalizedQuery.includes('malayalam') ||
-        normalizedQuery.includes('bollywood') ||
-        normalizedQuery.includes('indian') ||
         normalizedQuery.includes('kannada') ||
         normalizedQuery.includes('punjabi') ||
-        ['telugu', 'hindi', 'tamil', 'malayalam'].includes(normalizedGenre);
+        normalizedQuery.includes('bollywood') ||
+        normalizedQuery.includes('kollywood') ||
+        normalizedQuery.includes('tollywood') ||
+        normalizedQuery.includes('mollywood') ||
+        normalizedQuery.includes('indian') ||
+        normalizedQuery.includes('rahman') ||
+        normalizedQuery.includes('anirudh') ||
+        normalizedQuery.includes('sriram') ||
+        normalizedQuery.includes('thaman') ||
+        normalizedQuery.includes('ilayaraja') ||
+        normalizedQuery.includes('dsp') ||
+        normalizedQuery.includes('spb') ||
+        ['telugu', 'hindi', 'tamil', 'malayalam', 'kannada', 'punjabi'].includes(normalizedGenre);
 
       if (sourceFilter === 'archive' || isIndianSearch) {
         // Query archive.org directly for regional songs to get massive high-quality Indian catalogs!
         const searchTerm = queryStr || genreStr || 'telugu';
-        results = await fetchInternetArchiveTracks(searchTerm);
+        externalResults = await fetchInternetArchiveTracks(searchTerm);
       } else {
         // Fetch Jamendo tracks primarily
         const jamendoResults = await fetchJamendoTracks({
@@ -57,13 +77,24 @@ export default function SearchTab() {
         // If 'all', mix in archive tracks when searching specifically
         if (sourceFilter === 'all' && queryStr && queryStr.length > 2) {
           const archiveResults = await fetchInternetArchiveTracks(queryStr);
-          results = [...jamendoResults, ...archiveResults].slice(0, 40);
+          externalResults = [...jamendoResults, ...archiveResults].slice(0, 40);
         } else {
-          results = jamendoResults;
+          externalResults = jamendoResults;
         }
       }
 
-      setTracks(results);
+      // Merge local matches at the top, removing duplicates
+      const merged = [...localMatches];
+      const seenIds = new Set(localMatches.map(t => t.id));
+      
+      for (const track of externalResults) {
+        if (!seenIds.has(track.id)) {
+          merged.push(track);
+          seenIds.add(track.id);
+        }
+      }
+
+      setTracks(merged);
     } catch (e) {
       console.error(e);
     } finally {

@@ -259,6 +259,114 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
   }
 ];
 
+function getLevenshteinDistance(a: string, b: string): number {
+  const matrix = Array.from({ length: a.length + 1 }, () =>
+    Array(b.length + 1).fill(0)
+  );
+
+  for (let i = 0; i <= a.length; i++) matrix[i][0] = i;
+  for (let j = 0; j <= b.length; j++) matrix[0][j] = j;
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1, // deletion
+        matrix[i][j - 1] + 1, // insertion
+        matrix[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+  return matrix[a.length][b.length];
+}
+
+export function searchCuratedTracks(queryStr: string): Track[] {
+  const query = queryStr.toLowerCase().trim();
+  if (!query) return [];
+
+  const queryWords = query.split(/\s+/).filter(w => w.length > 0);
+  if (queryWords.length === 0) return [];
+
+  const localPool = [...CURATED_REGIONAL_TRACKS, ...CURATED_FALLBACK_TRACKS];
+  const resultsWithScores = localPool.map(track => {
+    let maxScore = 0;
+    
+    const title = track.title.toLowerCase();
+    const artist = track.artistName.toLowerCase();
+    const album = track.albumName.toLowerCase();
+    const genre = (track.genre || '').toLowerCase();
+    
+    // 1. Exact full substring matches (highest priority)
+    if (title.includes(query)) {
+      maxScore = Math.max(maxScore, 100);
+    } else if (artist.includes(query)) {
+      maxScore = Math.max(maxScore, 90);
+    } else if (album.includes(query)) {
+      maxScore = Math.max(maxScore, 80);
+    } else if (genre.includes(query)) {
+      maxScore = Math.max(maxScore, 70);
+    }
+    
+    // 2. Stripped matching (handles spaces removal/addition like "buttabomma" or "rowdybaby")
+    const cleanTitle = title.replace(/\s+/g, '');
+    const cleanQuery = query.replace(/\s+/g, '');
+    if (cleanTitle.includes(cleanQuery) || cleanQuery.includes(cleanTitle)) {
+      maxScore = Math.max(maxScore, 95);
+    } else {
+      const fullDistance = getLevenshteinDistance(cleanQuery, cleanTitle);
+      if (cleanQuery.length >= 4 && fullDistance <= 2) {
+        maxScore = Math.max(maxScore, 85);
+      }
+    }
+    
+    // 3. Word-by-word token matching (handles words in different orders and minor typos)
+    const trackWords = `${title} ${artist} ${album} ${genre}`.split(/\s+/).filter(w => w.length > 0);
+    let matchedWordsCount = 0;
+    
+    for (const qWord of queryWords) {
+      let bestWordScore = 0;
+      for (const tWord of trackWords) {
+        // Exact word match
+        if (tWord === qWord) {
+          bestWordScore = Math.max(bestWordScore, 50);
+        }
+        // Substring word match
+        else if (tWord.includes(qWord) || qWord.includes(tWord)) {
+          bestWordScore = Math.max(bestWordScore, 30);
+        }
+        // Fuzzy Levenshtein match (typo tolerance)
+        else {
+          const distance = getLevenshteinDistance(qWord, tWord);
+          const maxLength = Math.max(qWord.length, tWord.length);
+          const allowedTypos = qWord.length > 4 ? 2 : 1;
+          
+          if (qWord.length >= 3 && distance <= allowedTypos) {
+            const similarity = 1 - distance / maxLength;
+            bestWordScore = Math.max(bestWordScore, Math.floor(similarity * 40));
+          }
+        }
+      }
+      if (bestWordScore > 0) {
+        matchedWordsCount++;
+      }
+    }
+    
+    // Calculate total token score
+    if (matchedWordsCount > 0) {
+      const tokenScore = Math.floor((matchedWordsCount / queryWords.length) * 60);
+      maxScore = Math.max(maxScore, tokenScore);
+    }
+    
+    return { track, score: maxScore };
+  });
+
+  // Filter out tracks that did not match (score 0) and sort by score descending
+  return resultsWithScores
+    .filter(r => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map(r => r.track);
+}
+
 export async function fetchInternetArchiveTracks(queryStr: string): Promise<Track[]> {
   try {
     const lowerQuery = queryStr.toLowerCase();
@@ -282,16 +390,20 @@ export async function fetchInternetArchiveTracks(queryStr: string): Promise<Trac
     // Guide the archive search queries to fetch albums with movie tracks
     if (lowerQuery === 'telugu') {
       targetSearch = 'telugu movie mp3 songs';
-    } else if (lowerQuery === 'hindi') {
+    } else if (lowerQuery === 'hindi' || lowerQuery === 'bollywood') {
       targetSearch = 'bollywood hindi movie mp3';
     } else if (lowerQuery === 'tamil') {
       targetSearch = 'tamil movie mp3 songs';
     } else if (lowerQuery === 'malayalam') {
       targetSearch = 'malayalam movie mp3 songs';
+    } else if (lowerQuery === 'kannada') {
+      targetSearch = 'kannada movie mp3';
+    } else if (lowerQuery === 'punjabi') {
+      targetSearch = 'punjabi mp3';
     }
 
     const query = encodeURIComponent(`mediatype:(audio) AND (${targetSearch})`);
-    const url = `https://archive.org/advancedsearch.php?q=${query}&fl[]=identifier,title,creator,album,downloads&rows=15&output=json`;
+    const url = `https://archive.org/advancedsearch.php?q=${query}&fl[]=identifier,title,creator,album,downloads&rows=30&output=json`;
     
     const res = await fetch(url);
     if (!res.ok) {
@@ -300,9 +412,9 @@ export async function fetchInternetArchiveTracks(queryStr: string): Promise<Trac
     const data = await res.json();
     const docs = data.response?.docs || [];
 
-    // Map Archive.org tracks with real MP3 file lookup
+    // Map Archive.org tracks: fetch metadata for all documents, then return all MP3 files as individual tracks!
     const trackPromises = docs.map(async (doc: any) => {
-      if (!doc.identifier || !doc.title) return null;
+      if (!doc.identifier || !doc.title) return [];
 
       try {
         // Fetch metadata to find the actual MP3 filename
@@ -311,72 +423,72 @@ export async function fetchInternetArchiveTracks(queryStr: string): Promise<Trac
         if (!metaRes.ok) throw new Error('Meta fetch failed');
         const metaData = await metaRes.json();
         
-        // Find the best MP3 file
-        // Ignore files that are internal or metadata
-        const mp3Files = metaData.files?.filter((f: any) => 
+        // Find the best MP3 files (limit to top 15 tracks per collection to avoid huge lists)
+        const mp3Files = (metaData.files?.filter((f: any) => 
           f.name && 
           f.name.toLowerCase().endsWith('.mp3') && 
           !f.name.toLowerCase().includes('_thumb') &&
           !f.name.toLowerCase().includes('_meta')
-        ) || [];
+        ) || []).slice(0, 15);
 
-        if (mp3Files.length === 0) return null;
+        if (mp3Files.length === 0) return [];
 
-        // Try to find a VBR MP3 file or take the largest/first one
-        const vbrFile = mp3Files.find((f: any) => f.format && f.format.includes('MP3'));
-        const targetFile = vbrFile || mp3Files[0];
-
-        // Format direct audio URL - split and encode path segments to avoid encoding folder slashes
-        const audioUrl = `https://archive.org/download/${doc.identifier}/${targetFile.name.split('/').map(encodeURIComponent).join('/')}`;
-        
-        // Determine duration from metadata if present
-        let duration = 240; // Default fallback
-        if (targetFile.length) {
-          const parts = targetFile.length.split(':');
-          if (parts.length === 3) {
-            duration = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseInt(parts[2], 10);
-          } else if (parts.length === 2) {
-            duration = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
-          } else {
-            const parsed = parseFloat(targetFile.length);
+        return mp3Files.map((file: any) => {
+          // Format direct audio URL - split and encode path segments to avoid encoding folder slashes
+          const audioUrl = `https://archive.org/download/${doc.identifier}/${file.name.split('/').map(encodeURIComponent).join('/')}`;
+          
+          // Determine duration from metadata if present
+          let duration = 240; // Default fallback
+          if (file.length) {
+            const parts = file.length.split(':');
+            if (parts.length === 3) {
+              duration = parseInt(parts[0], 10) * 3600 + parseInt(parts[1], 10) * 60 + parseInt(parts[2], 10);
+            } else if (parts.length === 2) {
+              duration = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+            } else {
+              const parsed = parseFloat(file.length);
+              if (!isNaN(parsed)) duration = Math.round(parsed);
+            }
+          } else if (file.duration) {
+            const parsed = parseFloat(file.duration);
             if (!isNaN(parsed)) duration = Math.round(parsed);
           }
-        } else if (targetFile.duration) {
-          const parsed = parseFloat(targetFile.duration);
-          if (!isNaN(parsed)) duration = Math.round(parsed);
-        }
 
-        // Return a fully valid Track object
-        return {
-          id: `${doc.identifier}-${targetFile.name}`, // Unique ID combined with filename to allow multiple tracks from same collection
-          title: doc.title || targetFile.name.replace(/\.mp3$/i, '').replace(/_/g, ' '),
-          artistName: doc.creator || 'Indian Archive',
-          albumName: doc.album || 'Archive Collection',
-          coverUrl: `https://archive.org/services/img/${doc.identifier}` || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80',
-          audioUrl: audioUrl,
-          durationSeconds: duration,
-          source: 'archive',
-          genre: 'Regional Hits',
-        };
+          // Clean title: use the file title if available, otherwise format the filename
+          const rawTitle = file.title || file.name.split('/').pop()?.replace(/\.mp3$/i, '').replace(/_/g, ' ') || 'Unknown Track';
+          const cleanTitle = rawTitle.replace(/^\d+[\s\-_]*/, '').trim();
+
+          return {
+            id: `${doc.identifier}-${file.name}`,
+            title: cleanTitle,
+            artistName: doc.creator || file.creator || 'Indian Cinema',
+            albumName: doc.album || doc.title || 'Archive Collection',
+            coverUrl: `https://archive.org/services/img/${doc.identifier}` || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80',
+            audioUrl: audioUrl,
+            durationSeconds: duration,
+            source: 'archive' as const,
+            genre: 'Regional Hits',
+          };
+        });
       } catch (err) {
-        // Fallback to VBR guessing if metadata call fails, to ensure we still output a result
+        // Fallback to direct stream guessing if metadata call fails, to ensure we still output a result
         const fallbackStream = `https://archive.org/download/${doc.identifier}/${doc.identifier}_vbr.mp3`;
-        return {
+        return [{
           id: doc.identifier,
           title: doc.title,
-          artistName: doc.creator || 'Indian Archive',
-          albumName: doc.album || 'Archive Collection',
+          artistName: doc.creator || 'Indian Cinema',
+          albumName: doc.album || doc.title || 'Archive Collection',
           coverUrl: `https://archive.org/services/img/${doc.identifier}` || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80',
           audioUrl: fallbackStream,
           durationSeconds: 240,
-          source: 'archive',
+          source: 'archive' as const,
           genre: 'Regional Hits',
-        };
+        }];
       }
     });
 
-    const resolvedTracks = await Promise.all(trackPromises);
-    const validFetchedTracks = resolvedTracks.filter((t): t is Track => t !== null);
+    const resolvedArrays = await Promise.all(trackPromises);
+    const validFetchedTracks = resolvedArrays.flat();
 
     // Merge curated hits with fetched tracks to provide an ultra-rich experience
     // Remove duplicates from the fetched list that are already in curated
