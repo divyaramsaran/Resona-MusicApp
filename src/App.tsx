@@ -51,7 +51,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-base font-extrabold tracking-tight text-white uppercase font-sans">
-              Harmony
+              Resona
             </h1>
             <span className="text-[10px] text-indigo-300 font-mono tracking-widest uppercase">
               Free Stream
@@ -96,7 +96,7 @@ export default function App() {
             <Music className="w-4 h-4" fill="currentColor" />
           </div>
           <span className="text-sm font-black tracking-wider uppercase text-white font-sans">
-            Harmony
+            Resona
           </span>
         </div>
         <span className="text-[9px] px-2 py-0.5 font-mono uppercase bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-full">

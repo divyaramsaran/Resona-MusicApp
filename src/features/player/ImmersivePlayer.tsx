@@ -108,25 +108,36 @@ export default function ImmersivePlayer() {
         </header>
 
         {/* Main Workspace */}
-        <main className="relative z-10 flex-1 flex flex-col lg:flex-row items-center justify-center p-6 lg:p-12 gap-8 max-w-7xl mx-auto w-full overflow-y-auto">
+        <main className="relative z-10 flex-1 flex flex-col lg:flex-row items-center justify-start lg:justify-center p-6 lg:p-12 gap-8 max-w-7xl mx-auto w-full overflow-y-auto">
           
           {/* Left panel: Disk / Art */}
-          <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md">
-            <div className="relative group w-64 h-64 sm:w-80 sm:h-80 md:w-96 md:h-96 flex items-center justify-center">
+          <div className="flex flex-col items-center justify-center w-full max-w-md flex-shrink-0">
+            <div className="relative group w-48 h-48 sm:w-72 sm:h-72 md:w-96 md:h-96 flex-shrink-0 aspect-square flex items-center justify-center">
               {/* Vinyl record design */}
-              <div className="absolute inset-0 rounded-full bg-slate-950 shadow-2xl flex items-center justify-center border-4 border-white/5">
+              <div 
+                className={`absolute inset-0 rounded-full bg-slate-950 shadow-2xl flex items-center justify-center border-4 border-white/5 ${
+                  isPlaying ? 'animate-spin-slow' : ''
+                }`}
+                style={{
+                  animationPlayState: isPlaying ? 'running' : 'paused',
+                  willChange: 'transform',
+                  backfaceVisibility: 'hidden',
+                }}
+              >
                 {/* Vinyl grooved lines */}
-                <div className="absolute inset-3 rounded-full border border-white/5 opacity-40" />
-                <div className="absolute inset-6 rounded-full border border-white/5 opacity-40" />
-                <div className="absolute inset-10 rounded-full border border-white/5 opacity-40" />
-                <div className="absolute inset-16 rounded-full border border-white/5 opacity-40" />
-                <div className="absolute inset-24 rounded-full border border-white/5 opacity-40" />
+                <div className="absolute inset-2 sm:inset-3 rounded-full border border-white/5 opacity-40" />
+                <div className="absolute inset-4 sm:inset-6 rounded-full border border-white/5 opacity-40" />
+                <div className="absolute inset-7 sm:inset-10 rounded-full border border-white/5 opacity-40" />
+                <div className="absolute inset-11 sm:inset-16 rounded-full border border-white/5 opacity-40" />
+                <div className="absolute inset-16 sm:inset-24 rounded-full border border-white/5 opacity-40" />
                 
                 {/* Center album art disc */}
-                <motion.div
-                  animate={isPlaying ? { rotate: 360 } : {}}
-                  transition={isPlaying ? { repeat: Infinity, duration: 12, ease: 'linear' } : {}}
-                  className="w-40 h-40 sm:w-48 sm:h-48 md:w-56 md:h-56 rounded-full overflow-hidden border-4 border-slate-900 relative z-10"
+                <div
+                  className="w-28 h-28 sm:w-44 sm:h-44 md:w-56 md:h-56 rounded-full overflow-hidden border-4 border-slate-900 relative z-10"
+                  style={{
+                    willChange: 'transform',
+                    backfaceVisibility: 'hidden',
+                  }}
                 >
                   <img
                     src={currentTrack.coverUrl}
@@ -135,8 +146,8 @@ export default function ImmersivePlayer() {
                     className="w-full h-full object-cover"
                   />
                   {/* Vinyl center adapter hole */}
-                  <div className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-[#0a0a0f] border-2 border-slate-900 shadow-inner" />
-                </motion.div>
+                  <div className="absolute inset-0 m-auto w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-[#0a0a0f] border-2 border-slate-900 shadow-inner" />
+                </div>
               </div>
             </div>
 

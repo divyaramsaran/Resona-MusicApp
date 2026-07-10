@@ -51,3 +51,18 @@ body {
   background: rgba(255, 255, 255, 0.2);
 }
 
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg) translateZ(0);
+  }
+  to {
+    transform: rotate(360deg) translateZ(0);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 20s linear infinite;
+  will-change: transform;
+  transform: translateZ(0);
+}
+
