@@ -259,7 +259,7 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
   }
 ];
 
-function getLevenshteinDistance(a: string, b: string): number {
+export function getLevenshteinDistance(a: string, b: string): number {
   const matrix = Array.from({ length: a.length + 1 }, () =>
     Array(b.length + 1).fill(0)
   );
