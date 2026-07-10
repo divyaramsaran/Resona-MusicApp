@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { usePlayerStore } from '../player/playerStore';
-import { fetchJamendoTracks, fetchInternetArchiveTracks, searchCuratedTracks, CURATED_REGIONAL_TRACKS, CURATED_FALLBACK_TRACKS } from '../../lib/api';
+import { fetchJamendoTracks, fetchInternetArchiveTracks, searchCuratedTracks, CURATED_REGIONAL_TRACKS, CURATED_FALLBACK_TRACKS, getLevenshteinDistance } from '../../lib/api';
 import { Track } from '../../types';
 import TrackRow from '../../components/TrackRow';
 import { Search, Music, Sparkles, Loader2, Play } from 'lucide-react';
@@ -16,6 +16,85 @@ const POPULAR_GENRES = [
   { id: 'acoustic', label: '🎸 Acoustic / Folk', color: 'border-emerald-500/20 text-emerald-300 bg-emerald-500/5' },
   { id: 'soundtrack', label: '🎬 Orchestral / Film', color: 'border-rose-500/20 text-rose-300 bg-rose-500/5' },
 ];
+
+function rankTracks(tracks: Track[], queryStr: string): Track[] {
+  const query = queryStr.toLowerCase().trim();
+  if (!query) return tracks;
+
+  const queryWords = query.split(/\s+/).filter(w => w.length > 0);
+  if (queryWords.length === 0) return tracks;
+
+  const scored = tracks.map(track => {
+    let score = 0;
+    const title = track.title.toLowerCase();
+    const artist = track.artistName.toLowerCase();
+    const album = track.albumName.toLowerCase();
+    
+    const cleanQuery = query.replace(/\s+/g, '');
+    const cleanTitle = title.replace(/\s+/g, '');
+    const cleanAlbum = album.replace(/\s+/g, '');
+    
+    // 1. Exact or Substring Matches (album match is weighted VERY high for movie searches!)
+    if (album === query || cleanAlbum === cleanQuery) {
+      score += 300; // Perfect album/movie match
+    } else if (album.includes(query) || cleanAlbum.includes(cleanQuery)) {
+      score += 200; // Substring album/movie match
+    }
+    
+    if (title === query || cleanTitle === cleanQuery) {
+      score += 250; // Perfect title match
+    } else if (title.includes(query) || cleanTitle.includes(cleanQuery)) {
+      score += 150; // Substring title match
+    }
+    
+    if (artist.includes(query)) {
+      score += 80;
+    }
+    
+    // 2. Fuzzy Levenshtein matching on album/movie name (handles typos in movie names!)
+    if (cleanQuery.length >= 4) {
+      const albumDistance = getLevenshteinDistance(cleanQuery, cleanAlbum);
+      if (albumDistance <= 2) {
+        score += 180; // Fuzzy album match (high priority for minor movie name typos!)
+      }
+      
+      const titleDistance = getLevenshteinDistance(cleanQuery, cleanTitle);
+      if (titleDistance <= 2) {
+        score += 120; // Fuzzy title match
+      }
+    }
+
+    // 3. Word token matching (handles words in different orders)
+    const trackWords = `${title} ${artist} ${album}`.split(/\s+/).filter(w => w.length > 0);
+    let matchedWords = 0;
+    for (const qWord of queryWords) {
+      for (const tWord of trackWords) {
+        if (tWord === qWord) {
+          matchedWords++;
+          break;
+        } else if (tWord.includes(qWord) || qWord.includes(tWord)) {
+          matchedWords += 0.5;
+          break;
+        } else if (qWord.length >= 3 && getLevenshteinDistance(qWord, tWord) <= 1) {
+          matchedWords += 0.3;
+          break;
+        }
+      }
+    }
+    score += (matchedWords / queryWords.length) * 100;
+
+    // 4. Boost for Archive.org tracks when doing movie searches, because they contain real film audio
+    if (track.source === 'archive' && (album.includes('movie') || album.includes('songs') || album.includes('soundtrack') || album.includes('collection'))) {
+      score += 30;
+    }
+
+    return { track, score };
+  });
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .map(s => s.track);
+}
 
 export default function SearchTab() {
   const { searchQuery, setSearchQuery, selectedGenre, setSelectedGenre } = usePlayerStore();
@@ -38,56 +117,40 @@ export default function SearchTab() {
       }
 
       let externalResults: Track[] = [];
-      const normalizedQuery = queryStr.toLowerCase();
-      const normalizedGenre = genreStr.toLowerCase();
-      
-      const isIndianSearch = 
-        normalizedQuery.includes('telugu') || 
-        normalizedQuery.includes('hindi') || 
-        normalizedQuery.includes('tamil') || 
-        normalizedQuery.includes('malayalam') ||
-        normalizedQuery.includes('kannada') ||
-        normalizedQuery.includes('punjabi') ||
-        normalizedQuery.includes('bollywood') ||
-        normalizedQuery.includes('kollywood') ||
-        normalizedQuery.includes('tollywood') ||
-        normalizedQuery.includes('mollywood') ||
-        normalizedQuery.includes('indian') ||
-        normalizedQuery.includes('rahman') ||
-        normalizedQuery.includes('anirudh') ||
-        normalizedQuery.includes('sriram') ||
-        normalizedQuery.includes('thaman') ||
-        normalizedQuery.includes('ilayaraja') ||
-        normalizedQuery.includes('dsp') ||
-        normalizedQuery.includes('spb') ||
-        ['telugu', 'hindi', 'tamil', 'malayalam', 'kannada', 'punjabi'].includes(normalizedGenre);
 
-      if (sourceFilter === 'archive' || isIndianSearch) {
-        // Query archive.org directly for regional songs to get massive high-quality Indian catalogs!
+      if (sourceFilter === 'jamendo') {
+        externalResults = await fetchJamendoTracks({
+          search: queryStr,
+          genre: genreStr,
+          limit: 40,
+        });
+      } else if (sourceFilter === 'archive') {
         const searchTerm = queryStr || genreStr || 'telugu';
         externalResults = await fetchInternetArchiveTracks(searchTerm);
       } else {
-        // Fetch Jamendo tracks primarily
-        const jamendoResults = await fetchJamendoTracks({
-          search: queryStr,
-          genre: genreStr,
-          limit: 35,
-        });
+        // Query BOTH in parallel when source filter is 'all'
+        const searchVal = queryStr.trim() || genreStr.trim() || 'telugu';
 
-        // If 'all', mix in archive tracks when searching specifically
-        if (sourceFilter === 'all' && queryStr && queryStr.length > 2) {
-          const archiveResults = await fetchInternetArchiveTracks(queryStr);
-          externalResults = [...jamendoResults, ...archiveResults].slice(0, 40);
-        } else {
-          externalResults = jamendoResults;
-        }
+        const [jamendoResults, archiveResults] = await Promise.all([
+          fetchJamendoTracks({
+            search: queryStr,
+            genre: genreStr,
+            limit: 30,
+          }).catch(() => []),
+          fetchInternetArchiveTracks(searchVal).catch(() => [])
+        ]);
+
+        externalResults = [...jamendoResults, ...archiveResults];
       }
+
+      // Rank all external results based on query relevance
+      const rankedResults = rankTracks(externalResults, queryStr || genreStr);
 
       // Merge local matches at the top, removing duplicates
       const merged = [...localMatches];
       const seenIds = new Set(localMatches.map(t => t.id));
       
-      for (const track of externalResults) {
+      for (const track of rankedResults) {
         if (!seenIds.has(track.id)) {
           merged.push(track);
           seenIds.add(track.id);
