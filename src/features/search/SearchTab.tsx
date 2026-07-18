@@ -30,71 +30,126 @@ function rankTracks(tracks: Track[], queryStr: string): Track[] {
     const artist = track.artistName.toLowerCase();
     const album = track.albumName.toLowerCase();
     
-    const cleanQuery = query.replace(/\s+/g, '');
-    const cleanTitle = title.replace(/\s+/g, '');
-    const cleanAlbum = album.replace(/\s+/g, '');
+    const cleanQuery = query.replace(/[^a-z0-9]/g, '');
+    const cleanTitle = title.replace(/[^a-z0-9]/g, '');
+    const cleanAlbum = album.replace(/[^a-z0-9]/g, '');
     
-    // 1. Exact or Substring Matches (album match is weighted VERY high for movie searches!)
-    if (album === query || cleanAlbum === cleanQuery) {
-      score += 300; // Perfect album/movie match
-    } else if (album.includes(query) || cleanAlbum.includes(cleanQuery)) {
-      score += 200; // Substring album/movie match
-    }
-    
+    // 1. Title matching (Weighted highest)
     if (title === query || cleanTitle === cleanQuery) {
-      score += 250; // Perfect title match
+      score += 1000; // Exact title match
+    } else if (title.startsWith(query)) {
+      score += 600; // Starts with title match
     } else if (title.includes(query) || cleanTitle.includes(cleanQuery)) {
-      score += 150; // Substring title match
+      score += 400; // Substring title match
     }
     
+    // 2. Album/Movie matching (Secondary, but very important for movie queries)
+    if (album === query || cleanAlbum === cleanQuery) {
+      score += 500; // Exact album match
+    } else if (album.includes(query) || cleanAlbum.includes(cleanQuery)) {
+      score += 200; // Substring album match
+    }
+    
+    // 3. Artist matching
     if (artist.includes(query)) {
-      score += 80;
+      score += 150;
     }
     
-    // 2. Fuzzy Levenshtein matching on album/movie name (handles typos in movie names!)
+    // 4. Fuzzy Levenshtein matching on title & album
     if (cleanQuery.length >= 4) {
-      const albumDistance = getLevenshteinDistance(cleanQuery, cleanAlbum);
-      if (albumDistance <= 2) {
-        score += 180; // Fuzzy album match (high priority for minor movie name typos!)
-      }
-      
       const titleDistance = getLevenshteinDistance(cleanQuery, cleanTitle);
       if (titleDistance <= 2) {
-        score += 120; // Fuzzy title match
+        score += 300; // Fuzzy title match
+      }
+      
+      const albumDistance = getLevenshteinDistance(cleanQuery, cleanAlbum);
+      if (albumDistance <= 2) {
+        score += 150; // Fuzzy album match
       }
     }
 
-    // 3. Word token matching (handles words in different orders)
-    const trackWords = `${title} ${artist} ${album}`.split(/\s+/).filter(w => w.length > 0);
-    let matchedWords = 0;
+    // 5. Word token matching
+    const titleWords = title.split(/\s+/).filter(w => w.length > 0);
+    const artistWords = artist.split(/\s+/).filter(w => w.length > 0);
+    const albumWords = album.split(/\s+/).filter(w => w.length > 0);
+    
+    let titleMatches = 0;
+    let artistMatches = 0;
+    let albumMatches = 0;
+    
     for (const qWord of queryWords) {
-      for (const tWord of trackWords) {
+      if (qWord.length < 3) continue; // Skip very short words
+      
+      for (const tWord of titleWords) {
         if (tWord === qWord) {
-          matchedWords++;
+          titleMatches += 1;
           break;
-        } else if (tWord.includes(qWord) || qWord.includes(tWord)) {
-          matchedWords += 0.5;
+        } else if (tWord.includes(qWord)) {
+          titleMatches += 0.5;
           break;
-        } else if (qWord.length >= 3 && getLevenshteinDistance(qWord, tWord) <= 1) {
-          matchedWords += 0.3;
+        }
+      }
+      
+      for (const aWord of artistWords) {
+        if (aWord === qWord) {
+          artistMatches += 1;
+          break;
+        } else if (aWord.includes(qWord)) {
+          artistMatches += 0.5;
+          break;
+        }
+      }
+
+      for (const alWord of albumWords) {
+        if (alWord === qWord) {
+          albumMatches += 1;
+          break;
+        } else if (alWord.includes(qWord)) {
+          albumMatches += 0.5;
           break;
         }
       }
     }
-    score += (matchedWords / queryWords.length) * 100;
+    
+    score += (titleMatches * 150);
+    score += (artistMatches * 50);
+    score += (albumMatches * 30);
 
-    // 4. Boost for Archive.org tracks when doing movie searches, because they contain real film audio
+    // Boost for archive tracks in movie searches (Indian films)
     if (track.source === 'archive' && (album.includes('movie') || album.includes('songs') || album.includes('soundtrack') || album.includes('collection'))) {
-      score += 30;
+      score += 20;
     }
 
     return { track, score };
   });
 
+  // Filter out tracks that have a score of 0 or a very low score (relevance threshold)
+  const CATEGORIES = ['telugu', 'hindi', 'tamil', 'malayalam', 'kannada', 'punjabi', 'lofi', 'ambient', 'electronic', 'acoustic', 'soundtrack', 'bollywood', 'indian', 'classical', 'instrumental', 'devotional', 'carnatic', 'hindustani'];
+  const isCategoryQuery = queryWords.some(w => CATEGORIES.includes(w));
+  const minScore = isCategoryQuery || query.length < 4 ? 10 : 50;
+
   return scored
+    .filter(s => s.score >= minScore)
     .sort((a, b) => b.score - a.score)
     .map(s => s.track);
 }
+
+const normalizeString = (str: string): string => {
+  return (str || '')
+    .toLowerCase()
+    .replace(/[\(\[\{](.*?)(128\s*kbps|320\s*kbps|sensongs|lyric|full|video|original|cover|remix|song|audio|mp3|download|hq|hd|high\s*quality)[\)\]\}]/gi, '')
+    .replace(/\b(128\s*kbps|320\s*kbps|sensongsmp3|sensongs|lyric|full\s*song|video\s*song|original\s*song|mp3|download|hq|hd|high\s*quality)\b/gi, '')
+    .replace(/[\(\[\{][^]*?[\)\]\}]/g, '')
+    .replace(/[^a-z0-9\u0900-\u097F\u0C00-\u0C7F\u0B80-\u0BFF\u0D00-\u0D7F]/g, '')
+    .trim();
+};
+
+const getTrackKey = (t: Track): string => {
+  const cleanTitle = normalizeString(t.title);
+  const primaryArtist = t.artistName.split(/,|\bfeat\b|\band\b|&/gi)[0];
+  const cleanArtist = normalizeString(primaryArtist);
+  return `${cleanTitle}-${cleanArtist}`;
+};
 
 export default function SearchTab() {
   const { searchQuery, setSearchQuery, selectedGenre, setSelectedGenre } = usePlayerStore();
@@ -128,7 +183,6 @@ export default function SearchTab() {
         const searchTerm = queryStr || genreStr || 'telugu';
         externalResults = await fetchInternetArchiveTracks(searchTerm);
       } else {
-        // Query BOTH in parallel when source filter is 'all'
         const searchVal = queryStr.trim() || genreStr.trim() || 'telugu';
 
         const [jamendoResults, archiveResults] = await Promise.all([
@@ -146,14 +200,23 @@ export default function SearchTab() {
       // Rank all external results based on query relevance
       const rankedResults = rankTracks(externalResults, queryStr || genreStr);
 
-      // Merge local matches at the top, removing duplicates
-      const merged = [...localMatches];
-      const seenIds = new Set(localMatches.map(t => t.id));
-      
-      for (const track of rankedResults) {
-        if (!seenIds.has(track.id)) {
+      // Merge local matches and ranked results with normalized fuzzy deduplication
+      const merged: Track[] = [];
+      const seenKeys = new Set<string>();
+
+      for (const track of localMatches) {
+        const key = getTrackKey(track);
+        if (!seenKeys.has(key)) {
           merged.push(track);
-          seenIds.add(track.id);
+          seenKeys.add(key);
+        }
+      }
+
+      for (const track of rankedResults) {
+        const key = getTrackKey(track);
+        if (!seenKeys.has(key)) {
+          merged.push(track);
+          seenKeys.add(key);
         }
       }
 
