@@ -4,6 +4,7 @@ import { usePlayerStore } from "./playerStore";
 export default function AudioEngine() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadedTrackIdRef = useRef<string | null>(null);
+  const skipTimeoutRef = useRef<any>(null);
 
   // Destructure reactive states from store to trigger correct sync effects
   const currentTrack = usePlayerStore((state) => state.currentTrack);
@@ -50,11 +51,26 @@ export default function AudioEngine() {
     };
 
     const handleError = (e: any) => {
-      console.warn("Audio play error, auto skipping to next track...", e);
+      const error = audio.error;
+      // Code 1 is MEDIA_ERR_ABORTED. Triggered when source resets or load is aborted.
+      // This is expected normal behavior during track transitions, so we must ignore it!
+      if (error && error.code === 1) {
+        return;
+      }
+
+      console.warn("Audio play error, auto skipping to next track...", error);
       const store = usePlayerStore.getState();
       if (store.isPlaying) {
-        setTimeout(() => {
-          store.nextTrack();
+        // Clear any previous timeout to avoid scheduling multiple parallel skips
+        if (skipTimeoutRef.current) {
+          clearTimeout(skipTimeoutRef.current);
+        }
+
+        skipTimeoutRef.current = setTimeout(() => {
+          const currentStore = usePlayerStore.getState();
+          if (currentStore.isPlaying) {
+            currentStore.nextTrack();
+          }
         }, 1500);
       }
     };
@@ -72,6 +88,11 @@ export default function AudioEngine() {
       audio.removeEventListener("timeupdate", handleTimeUpdate);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("error", handleError);
+      
+      // Clear timeout on unmount
+      if (skipTimeoutRef.current) {
+        clearTimeout(skipTimeoutRef.current);
+      }
     };
   }, []); // Empty dependency array ensures audio instance is stable
 
@@ -81,6 +102,12 @@ export default function AudioEngine() {
     if (!audio) return;
 
     if (currentTrack) {
+      // Clear any pending error skip timeouts since we are loading/playing a new track
+      if (skipTimeoutRef.current) {
+        clearTimeout(skipTimeoutRef.current);
+        skipTimeoutRef.current = null;
+      }
+
       // Sync URL using unique track ID instead of URL string comparison
       if (loadedTrackIdRef.current !== currentTrack.id) {
         loadedTrackIdRef.current = currentTrack.id;
@@ -104,6 +131,11 @@ export default function AudioEngine() {
         audio.pause();
       }
     } else {
+      // Clear skip timeout if track is cleared
+      if (skipTimeoutRef.current) {
+        clearTimeout(skipTimeoutRef.current);
+        skipTimeoutRef.current = null;
+      }
       loadedTrackIdRef.current = null;
       audio.src = "";
       audio.pause();

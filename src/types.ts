@@ -9,6 +9,7 @@ export interface Track {
   licenseUrl?: string;
   source: 'jamendo' | 'archive';
   genre?: string;
+  searchTags?: string[];
 }
 
 export interface Playlist {

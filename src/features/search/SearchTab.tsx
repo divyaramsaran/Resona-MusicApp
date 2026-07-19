@@ -33,6 +33,7 @@ function rankTracks(tracks: Track[], queryStr: string): Track[] {
     const cleanQuery = query.replace(/[^a-z0-9]/g, '');
     const cleanTitle = title.replace(/[^a-z0-9]/g, '');
     const cleanAlbum = album.replace(/[^a-z0-9]/g, '');
+    const cleanArtist = artist.replace(/[^a-z0-9]/g, '');
     
     // 1. Title matching (Weighted highest)
     if (title === query || cleanTitle === cleanQuery) {
@@ -43,6 +44,17 @@ function rankTracks(tracks: Track[], queryStr: string): Track[] {
       score += 400; // Substring title match
     }
     
+    // 1.5. searchTags matching (For popular chorus hooks/bits)
+    if (track.searchTags && track.searchTags.length > 0) {
+      const matchedTag = track.searchTags.some(tag => {
+        const cleanTag = tag.toLowerCase().replace(/[^a-z0-9]/g, '');
+        return cleanTag.includes(cleanQuery) || cleanQuery.includes(cleanTag);
+      });
+      if (matchedTag) {
+        score += 650; // High priority for popular song hook queries
+      }
+    }
+    
     // 2. Album/Movie matching (Secondary, but very important for movie queries)
     if (album === query || cleanAlbum === cleanQuery) {
       score += 500; // Exact album match
@@ -51,8 +63,10 @@ function rankTracks(tracks: Track[], queryStr: string): Track[] {
     }
     
     // 3. Artist matching
-    if (artist.includes(query)) {
-      score += 150;
+    if (artist === query || cleanArtist === cleanQuery) {
+      score += 850; // Perfect artist match (boost artist search)
+    } else if (artist.includes(query)) {
+      score += 350; // Substring artist match
     }
     
     // 4. Fuzzy Levenshtein matching on title & album
@@ -152,13 +166,30 @@ const getTrackKey = (t: Track): string => {
 };
 
 export default function SearchTab() {
-  const { searchQuery, setSearchQuery, selectedGenre, setSelectedGenre } = usePlayerStore();
+  const { searchQuery, setSearchQuery, selectedGenre, setSelectedGenre, playTrack } = usePlayerStore();
   const [localQuery, setLocalQuery] = useState(searchQuery);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<'all' | 'jamendo' | 'archive'>('all');
 
+  // Debounced search trigger (300ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(localQuery.trim());
+      if (localQuery.trim().length > 0) {
+        setSelectedGenre(''); // Clear genre browsing when typing text search
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [localQuery, setSearchQuery, setSelectedGenre]);
+
   const executeSearch = async (queryStr: string, genreStr: string) => {
+    if (!queryStr.trim() && !genreStr.trim()) {
+      setTracks([]);
+      return;
+    }
+    
     setLoading(true);
     try {
       let localMatches: Track[] = [];
@@ -255,6 +286,10 @@ export default function SearchTab() {
     setSelectedGenre('');
     setTracks([]);
   };
+
+  const showTopResult = tracks.length > 0 && searchQuery.trim().length > 0;
+  const topResult = tracks[0];
+  const otherSongs = showTopResult ? tracks.slice(1) : tracks;
 
   return (
     <div id="search-tab-view" className="flex flex-col gap-6 w-full max-w-4xl mx-auto pb-28">
@@ -368,21 +403,91 @@ export default function SearchTab() {
             <span className="text-xs font-mono">Querying legal sound databases...</span>
           </div>
         ) : tracks.length > 0 ? (
-          <div className="space-y-1.5 glass p-4 rounded-3xl">
-            <div className="flex items-center justify-between text-[11px] uppercase tracking-wider font-mono text-slate-400 px-4 pb-2 border-b border-white/10 mb-2">
-              <span className="flex-1"># Title / Artist</span>
-              <span className="hidden sm:block flex-1 max-w-[150px] pr-4">Album</span>
-              <span className="w-16 text-right">Time</span>
+          showTopResult ? (
+            /* Spotify-style layout: Top Result card + Songs list side-by-side */
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Top Result Column */}
+              <div className="md:col-span-1 flex flex-col gap-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-400">Top Result</h3>
+                <div 
+                  id="top-result-card"
+                  onClick={() => playTrack(topResult, tracks)}
+                  className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/5 p-6 flex flex-col justify-between h-[280px] group hover:bg-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-t from-indigo-950/40 via-transparent to-transparent opacity-60 pointer-events-none" />
+                  
+                  <div className="flex flex-col gap-4 relative z-10">
+                    <img 
+                      src={topResult.coverUrl} 
+                      alt={topResult.title}
+                      className="w-20 h-20 rounded-2xl object-cover shadow-2xl group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div>
+                      <h4 className="text-lg font-black text-white tracking-tight line-clamp-1 mt-2 group-hover:text-indigo-300 transition-colors">
+                        {topResult.title}
+                      </h4>
+                      <p className="text-xs text-slate-300 font-medium line-clamp-1 mt-1">
+                        {topResult.artistName}
+                      </p>
+                      <span className="inline-block text-[9px] font-mono tracking-wider uppercase bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full mt-3">
+                        {topResult.source === 'archive' ? 'Archive Collection' : 'Jamendo Stream'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Floating Play Button */}
+                  <button 
+                    id="btn-play-top-result"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playTrack(topResult, tracks);
+                    }}
+                    className="absolute bottom-6 right-6 p-3.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-full shadow-2xl scale-90 opacity-0 group-hover:opacity-100 group-hover:scale-100 transition-all duration-300 flex items-center justify-center hover:scale-110 active:scale-95 z-20"
+                    title="Play Track"
+                  >
+                    <Play className="w-4.5 h-4.5 fill-currentColor ml-0.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Other Songs List Column */}
+              <div className="md:col-span-2 flex flex-col gap-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-400">Songs</h3>
+                <div className="space-y-1.5 glass p-4 rounded-3xl flex-1">
+                  <div className="flex items-center justify-between text-[11px] uppercase tracking-wider font-mono text-slate-400 px-4 pb-2 border-b border-white/10 mb-2">
+                    <span className="flex-1"># Title / Artist</span>
+                    <span className="hidden sm:block flex-1 max-w-[150px] pr-4">Album</span>
+                    <span className="w-16 text-right">Time</span>
+                  </div>
+                  {otherSongs.slice(0, 7).map((track, index) => (
+                    <TrackRow
+                      key={`${track.id}-${index}`}
+                      track={track}
+                      index={index + 1}
+                      tracksList={tracks}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
-            {tracks.map((track, index) => (
-              <TrackRow
-                key={`${track.id}-${index}`}
-                track={track}
-                index={index}
-                tracksList={tracks}
-              />
-            ))}
-          </div>
+          ) : (
+            /* Standard Full List for Browsing Genre/Mood Lists */
+            <div className="space-y-1.5 glass p-4 rounded-3xl">
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wider font-mono text-slate-400 px-4 pb-2 border-b border-white/10 mb-2">
+                <span className="flex-1"># Title / Artist</span>
+                <span className="hidden sm:block flex-1 max-w-[150px] pr-4">Album</span>
+                <span className="w-16 text-right">Time</span>
+              </div>
+              {tracks.map((track, index) => (
+                <TrackRow
+                  key={`${track.id}-${index}`}
+                  track={track}
+                  index={index}
+                  tracksList={tracks}
+                />
+              ))}
+            </div>
+          )
         ) : (
           /* Empty / Initial State */
           <div className="flex flex-col items-center justify-center text-center py-20 px-6 border border-dashed border-white/10 rounded-3xl bg-white/5">
