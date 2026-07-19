@@ -367,6 +367,39 @@ export function searchCuratedTracks(queryStr: string): Track[] {
     .map(r => r.track);
 }
 
+function isFileMatch(file: any, queryWords: string[], queryStr: string): boolean {
+  const name = file.name.toLowerCase();
+  const title = (file.title || '').toLowerCase();
+  
+  // 1. Direct substring check
+  if (name.includes(queryStr) || title.includes(queryStr)) return true;
+  
+  // 2. Remove all spaces and check
+  const cleanName = name.replace(/[^a-z0-9]/g, '');
+  const cleanQuery = queryStr.replace(/[^a-z0-9]/g, '');
+  if (cleanQuery.length >= 3 && (cleanName.includes(cleanQuery) || cleanQuery.includes(cleanName))) return true;
+  
+  // 3. Word-by-word match (skip very short words)
+  for (const word of queryWords) {
+    if (word.length < 3) continue;
+    if (name.includes(word) || title.includes(word)) return true;
+  }
+  
+  // 4. Fuzzy Levenshtein match for minor typos in song name
+  if (queryStr.length >= 5) {
+    const fileWords = `${name} ${title}`.split(/[^a-z0-9]+/i).filter(w => w.length >= 4);
+    for (const fWord of fileWords) {
+      if (Math.abs(fWord.length - queryStr.length) <= 2) {
+        if (getLevenshteinDistance(queryStr, fWord) <= 2) {
+          return true;
+        }
+      }
+    }
+  }
+  
+  return false;
+}
+
 export async function fetchInternetArchiveTracks(queryStr: string): Promise<Track[]> {
   try {
     const lowerQuery = queryStr.toLowerCase();
@@ -403,7 +436,8 @@ export async function fetchInternetArchiveTracks(queryStr: string): Promise<Trac
     }
 
     const query = encodeURIComponent(`mediatype:(audio) AND (${targetSearch})`);
-    const url = `https://archive.org/advancedsearch.php?q=${query}&fl[]=identifier,title,creator,album,downloads&rows=30&output=json`;
+    // Optimize: query 15 rows instead of 30, and sort by downloads desc to get high-quality sources first
+    const url = `https://archive.org/advancedsearch.php?q=${query}&fl[]=identifier,title,creator,album,downloads&sort[]=downloads+desc&rows=15&output=json`;
     
     const res = await fetch(url);
     if (!res.ok) {
@@ -423,13 +457,38 @@ export async function fetchInternetArchiveTracks(queryStr: string): Promise<Trac
         if (!metaRes.ok) throw new Error('Meta fetch failed');
         const metaData = await metaRes.json();
         
-        // Find the best MP3 files (limit to top 15 tracks per collection to avoid huge lists)
-        const mp3Files = (metaData.files?.filter((f: any) => 
+        const lowerTitle = (doc.title || '').toLowerCase();
+        const lowerId = (doc.identifier || '').toLowerCase();
+        const lowerCreator = (doc.creator || '').toLowerCase();
+        const lowerAlbum = (doc.album || '').toLowerCase();
+        
+        // Categories/Genres: treat them as global matches to allow browsing
+        const CATEGORIES = ['telugu', 'hindi', 'tamil', 'malayalam', 'kannada', 'punjabi', 'lofi', 'ambient', 'electronic', 'acoustic', 'soundtrack', 'bollywood', 'indian', 'classical', 'instrumental', 'devotional', 'carnatic', 'hindustani'];
+        const queryWords = lowerQuery.split(/\s+/).filter(w => w.length > 0);
+        
+        const isCategoryQuery = queryWords.some(w => CATEGORIES.includes(w));
+        const isAlbumMatch = 
+          isCategoryQuery ||
+          lowerQuery.length < 4 ||
+          lowerTitle.includes(lowerQuery) || 
+          lowerId.includes(lowerQuery) || 
+          lowerAlbum.includes(lowerQuery) ||
+          lowerCreator.includes(lowerQuery);
+
+        let filteredFiles = metaData.files?.filter((f: any) => 
           f.name && 
           f.name.toLowerCase().endsWith('.mp3') && 
           !f.name.toLowerCase().includes('_thumb') &&
           !f.name.toLowerCase().includes('_meta')
-        ) || []).slice(0, 15);
+        ) || [];
+
+        // If not an album/category match, filter files that match the song query words
+        if (!isAlbumMatch && queryWords.length > 0) {
+          filteredFiles = filteredFiles.filter((file: any) => isFileMatch(file, queryWords, lowerQuery));
+        }
+
+        // Limit to top 15 tracks per collection to avoid performance issues
+        const mp3Files = filteredFiles.slice(0, 15);
 
         if (mp3Files.length === 0) return [];
 
