@@ -82,7 +82,7 @@ export async function fetchJamendoTracks(params: {
   const limit = params.limit || 30;
   const search = params.search ? encodeURIComponent(params.search) : '';
   const genre = params.genre ? encodeURIComponent(params.genre) : '';
-  const order = params.order || 'popularity_month';
+  const order = params.order || (params.search ? 'relevance' : 'popularity_month');
 
   // Construct URL
   let url = `https://api.jamendo.com/v3.0/tracks/?client_id=${clientId}&format=json&limit=${limit}&order=${order}&include=musicinfo`;
@@ -147,10 +147,11 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     artistName: 'Armaan Malik, Thaman S',
     albumName: 'Ala Vaikunthapurramuloo',
     coverUrl: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=400&q=80',
-    audioUrl: 'https://archive.org/download/telugump3songs_201910/02%20-%20ButtaBomma%20-%20SenSongsMp3.Co.mp3',
+    audioUrl: 'https://archive.org/download/butta-bomma/ButtaBomma.mp3',
     durationSeconds: 227,
     source: 'archive',
     genre: 'Telugu',
+    searchTags: ['butta bomma', 'buttabomma', 'armaan malik', 'thaman', 'ala vaikunthapurramuloo', 'padi padi leche', 'telugu song']
   },
   {
     id: 'telugu-samajavaragamana',
@@ -158,10 +159,11 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     artistName: 'Sid Sriram, Thaman S',
     albumName: 'Ala Vaikunthapurramuloo',
     coverUrl: 'https://images.unsplash.com/photo-1513829096999-4978602297a7?w=400&q=80',
-    audioUrl: 'https://archive.org/download/telugump3songs_201910/01%20-%20Samajavaragamana%20-%20SenSongsMp3.Co.mp3',
+    audioUrl: 'https://archive.org/download/samajavaragamana/samajavaragamana.mp3',
     durationSeconds: 221,
     source: 'archive',
     genre: 'Telugu',
+    searchTags: ['samajavaragamana', 'sid sriram', 'thaman', 'ala vaikunthapurramuloo', 'mallepuvvu', 'telugu song']
   },
   {
     id: 'telugu-ramuloo',
@@ -169,10 +171,11 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     artistName: 'Anurag Kulkarni, Mangli, Thaman S',
     albumName: 'Ala Vaikunthapurramuloo',
     coverUrl: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=400&q=80',
-    audioUrl: 'https://archive.org/download/telugump3songs_201910/03%20-%20Ramuloo%20Ramulaa%20-%20SenSongsMp3.Co.mp3',
+    audioUrl: 'https://archive.org/download/ramu-ramulaa/Ramu-Ramulaa.mp3',
     durationSeconds: 282,
     source: 'archive',
     genre: 'Telugu',
+    searchTags: ['ramuloo ramulaa', 'ramulo ramula', 'anurag kulkarni', 'mangli', 'thaman', 'ala vaikunthapurramuloo', 'telugu song']
   },
   
   // --- HINDI ---
@@ -182,10 +185,11 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     artistName: 'Arijit Singh, Mithoon',
     albumName: 'Aashiqui 2',
     coverUrl: 'https://images.unsplash.com/photo-1585647347483-22b66260dfff?w=400&q=80',
-    audioUrl: 'https://archive.org/download/Aashiqui2_2013/01%20Tum%20Hi%20Ho%20-%20Aashiqui%202%20%28128%20Kbps%29.mp3',
+    audioUrl: 'https://archive.org/download/arijit-singh-tum-hi-ho-myfreemp-3.vip/Arijit%20Singh%20-%20Tum%20Hi%20Ho%20myfreemp3.vip%20.mp3',
     durationSeconds: 262,
     source: 'archive',
     genre: 'Hindi',
+    searchTags: ['tum hi ho', 'arijit singh', 'mithoon', 'aashiqui 2', 'hum tere bin', 'kyunki tum hi ho', 'hindi song']
   },
   {
     id: 'hindi-chahunmain',
@@ -193,10 +197,11 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     artistName: 'Arijit Singh, Palak Muchhal',
     albumName: 'Aashiqui 2',
     coverUrl: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400&q=80',
-    audioUrl: 'https://archive.org/download/Aashiqui2_2013/03%20Chahun%20Main%20Ya%20Na%20-%20Aashiqui%202%20%28128%20Kbps%29.mp3',
+    audioUrl: 'https://archive.org/download/CHAHUNMAINYANAAREMIXDJKHUSHI/CHAHUN-MAIN-YA-NAA-REMIX-DJ-KHUSHI.mp3',
     durationSeconds: 304,
     source: 'archive',
     genre: 'Hindi',
+    searchTags: ['chahun main ya naa', 'chahun main ya na', 'arijit singh', 'palak muchhal', 'aashiqui 2', 'tu hi ye mujhko', 'hindi song']
   },
   {
     id: 'hindi-kabira',
@@ -204,12 +209,13 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     artistName: 'Tochi Raina, Rekha Bhardwaj, Pritam',
     albumName: 'Yeh Jawaani Hai Deewani',
     coverUrl: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?w=400&q=80',
-    audioUrl: 'https://archive.org/download/KabiraYJHD/Kabira%20-%20YJHD%20-%20128%20Kbps.mp3',
+    audioUrl: 'https://archive.org/download/kabirafullsongyehjawaanihaideewaniranbirkapoordeepikapadukone/_Kabira_Full_Song_Yeh_Jawaani_Hai_Deewani___Ranbir_Kapoor_Deepika_Padukone.mp3',
     durationSeconds: 223,
     source: 'archive',
     genre: 'Hindi',
+    searchTags: ['kabira', 'tochi raina', 'rekha bhardwaj', 'pritam', 'yeh jawaani hai deewani', 'yjhd', 're kabira maan ja', 'hindi song']
   },
-
+ 
   // --- TAMIL ---
   {
     id: 'tamil-rowdybaby',
@@ -217,10 +223,11 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     artistName: 'Dhanush, Dhee, Yuvan Shankar Raja',
     albumName: 'Maari 2',
     coverUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&q=80',
-    audioUrl: 'https://archive.org/download/RowdyBabyMaari2/Rowdy%20Baby.mp3',
+    audioUrl: 'https://archive.org/download/rowdy-baby-yuvan-shankar-raja-tamil/Rowdy%20Baby%20-%20Yuvan%20Shankar%20Raja%20!%20Tamil.mp3',
     durationSeconds: 284,
     source: 'archive',
     genre: 'Tamil',
+    searchTags: ['rowdy baby', 'dhanush', 'dhee', 'yuvan', 'maari 2', 'tamil song']
   },
   {
     id: 'tamil-arabickuthu',
@@ -232,8 +239,9 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     durationSeconds: 280,
     source: 'archive',
     genre: 'Tamil',
+    searchTags: ['arabic kuthu', 'halamithi habibo', 'anirudh', 'jonita gandhi', 'beast', 'vijay', 'tamil song']
   },
-
+ 
   // --- MALAYALAM ---
   {
     id: 'malayalam-malare',
@@ -241,21 +249,23 @@ export const CURATED_REGIONAL_TRACKS: Track[] = [
     artistName: 'Vijay Yesudas, Rajesh Murugesan',
     albumName: 'Premam',
     coverUrl: 'https://images.unsplash.com/photo-1507838153414-b4b713384a76?w=400&q=80',
-    audioUrl: 'https://archive.org/download/PremamMalare/Malare.mp3',
+    audioUrl: 'https://archive.org/download/01PremamSceneContraMaango.me/07%20-%20Premam%20-%20Malare%20%5BMaango.me%5D.mp3',
     durationSeconds: 316,
     source: 'archive',
     genre: 'Malayalam',
+    searchTags: ['malare', 'vijay yesudas', 'rajesh murugesan', 'premam', 'sai pallavi', 'nivin pauly', 'malayalam song']
   },
   {
-    id: 'malayalam-darshana',
-    title: 'Darshana',
-    artistName: 'Hesham Abdul Wahab, Darshana Rajendran',
-    albumName: 'Hridayam',
+    id: 'malayalam-aluva',
+    title: 'Aluva Puzha',
+    artistName: 'Vineeth Sreenivasan, Rajesh Murugesan',
+    albumName: 'Premam',
     coverUrl: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400&q=80',
-    audioUrl: 'https://archive.org/download/hridayam-malayalam/Darshana.mp3',
+    audioUrl: 'https://archive.org/download/01PremamSceneContraMaango.me/04%20-%20Premam%20-%20Aluva%20Puzha%20%5BMaango.me%5D.mp3',
     durationSeconds: 232,
     source: 'archive',
     genre: 'Malayalam',
+    searchTags: ['aluva puzha', 'aluva', 'vineeth sreenivasan', 'rajesh murugesan', 'premam', 'malayalam song']
   }
 ];
 
